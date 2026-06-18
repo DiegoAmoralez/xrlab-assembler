@@ -21,6 +21,12 @@ export const getClient = (): Client => {
     return client;
   }
 
+  if (process.env.VERCEL) {
+    throw new Error(
+      "TURSO_DATABASE_URL не задан. Добавьте Turso в Environment Variables на Vercel."
+    );
+  }
+
   const dataDir = path.join(process.cwd(), "data");
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
@@ -37,8 +43,8 @@ export const ensureSchema = async (): Promise<void> => {
   if (schemaReady) return;
   const db = getClient();
   await db.executeMultiple(SCHEMA_SQL);
-  await ensureDefaultUsers();
   schemaReady = true;
+  await ensureDefaultUsers();
 };
 
 export const toNumber = (value: unknown): number => {

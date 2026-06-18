@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
-import { createUser, getUserByEmail } from "./queries";
+import { randomUUID } from "crypto";
+import { getClient } from "./client";
 
 export const DEFAULT_EXECUTOR_EMAILS = [
   "max.malukalo@gmail.com",
@@ -17,13 +18,23 @@ export const ensureDefaultUsers = async (): Promise<void> => {
     return;
   }
 
+  const db = getClient();
   const passwordHash = await bcrypt.hash(password, 12);
 
   for (const email of DEFAULT_EXECUTOR_EMAILS) {
-    const existing = await getUserByEmail(email);
-    if (!existing) {
-      await createUser(email, passwordHash);
-    }
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await db.execute({
+      sql: "SELECT id FROM users WHERE email = ?",
+      args: [normalizedEmail],
+    });
+
+    if (existing.rows.length > 0) continue;
+
+    const id = randomUUID();
+    await db.execute({
+      sql: "INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, 'executor')",
+      args: [id, normalizedEmail, passwordHash],
+    });
   }
 
   usersSeeded = true;
