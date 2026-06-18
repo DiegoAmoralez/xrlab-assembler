@@ -1,29 +1,33 @@
 import bcrypt from "bcryptjs";
-import { ensureSchema, getUserByEmail, createUser } from "../src/lib/db";
+import {
+  ensureSchema,
+  getUserByEmail,
+  createUser,
+  DEFAULT_EXECUTOR_EMAILS,
+} from "../src/lib/db";
 
-const email = process.argv[2] || "executor@xrlab.local";
-const password = process.argv[3] || "changeme123";
+const password =
+  process.argv[2] || process.env.EXECUTOR_DEFAULT_PASSWORD || "qweasdzxc123";
 
 const seed = async () => {
   await ensureSchema();
 
-  const existing = await getUserByEmail(email);
-  if (existing) {
-    console.log(`Пользователь ${email} уже существует`);
-    return;
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  for (const email of DEFAULT_EXECUTOR_EMAILS) {
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      console.log(`Уже есть: ${email}`);
+      continue;
+    }
+
+    await createUser(email, passwordHash);
+    console.log(`Создан: ${email}`);
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
-  await createUser(email, passwordHash);
-
   const isTurso = Boolean(process.env.TURSO_DATABASE_URL);
-  console.log(`Создан исполнитель: ${email}`);
   console.log(`Пароль: ${password}`);
-  console.log(
-    isTurso
-      ? "База: Turso (облако)"
-      : "База: data/app.db (локальный файл)"
-  );
+  console.log(isTurso ? "База: Turso" : "База: data/app.db");
 };
 
 seed().catch((error) => {

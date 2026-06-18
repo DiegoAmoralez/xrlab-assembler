@@ -2,6 +2,7 @@ import { createClient, Client } from "@libsql/client";
 import fs from "fs";
 import path from "path";
 import { SCHEMA_SQL } from "./schema";
+import { ensureDefaultUsers } from "./seed-users";
 
 let client: Client | null = null;
 let schemaReady = false;
@@ -36,6 +37,7 @@ export const ensureSchema = async (): Promise<void> => {
   if (schemaReady) return;
   const db = getClient();
   await db.executeMultiple(SCHEMA_SQL);
+  await ensureDefaultUsers();
   schemaReady = true;
 };
 
