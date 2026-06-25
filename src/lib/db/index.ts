@@ -14,4 +14,3 @@ export {
 export type { DbUser } from "./queries";
 
 export { ensureDefaultUsers, DEFAULT_EXECUTOR_EMAILS } from "./seed-users";
-export { ensureSchema } from "./client";

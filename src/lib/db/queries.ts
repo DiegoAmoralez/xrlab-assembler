@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto";
 import {
   CreateTaskInput,
   Task,
@@ -6,57 +5,57 @@ import {
   UpdateTaskInput,
   PRIORITY_ORDER,
 } from "../types";
-import { ensureSchema, getClient, toNumber } from "./client";
+import { getSupabaseAdmin } from "../supabase";
+import { ensureDefaultUsers } from "./seed-users";
 
-const rowToTask = (row: Record<string, unknown>): Task =>
-  row as unknown as Task;
-
-const rowToComment = (row: Record<string, unknown>): TaskComment =>
-  row as unknown as TaskComment;
+const ensureReady = async () => {
+  await ensureDefaultUsers();
+};
 
 export const generateTaskNumber = async (): Promise<string> => {
-  await ensureSchema();
-  const db = getClient();
-  const result = await db.execute("SELECT COUNT(*) as count FROM tasks");
-  const nextNum = toNumber(result.rows[0]?.count) + 1;
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
+  const { count, error } = await supabase
+    .from("tasks")
+    .select("*", { count: "exact", head: true });
+
+  if (error) throw error;
+
+  const nextNum = (count ?? 0) + 1;
   return `PCB-${String(nextNum).padStart(4, "0")}`;
 };
 
 export const createTask = async (
   input: CreateTaskInput
 ): Promise<{ id: string; task_number: string }> => {
-  await ensureSchema();
-  const db = getClient();
-  const id = randomUUID();
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
   const taskNumber = await generateTaskNumber();
 
-  await db.execute({
-    sql: `INSERT INTO tasks (
-      id, task_number, requester_name, requester_contact, project_name,
-      task_type, title, description, work_needed, desired_deadline,
-      priority, components_status, components_location, documentation_link,
-      requester_comment, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`,
-    args: [
-      id,
-      taskNumber,
-      input.requester_name.trim(),
-      input.requester_contact.trim(),
-      input.project_name.trim(),
-      input.task_type,
-      input.title.trim(),
-      input.description?.trim() || null,
-      input.work_needed?.trim() || null,
-      input.desired_deadline || null,
-      input.priority || "medium",
-      input.components_status || null,
-      input.components_location?.trim() || null,
-      input.documentation_link?.trim() || null,
-      input.requester_comment?.trim() || null,
-    ],
-  });
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      task_number: taskNumber,
+      requester_name: input.requester_name.trim(),
+      requester_contact: input.requester_contact.trim(),
+      project_name: input.project_name.trim(),
+      task_type: input.task_type,
+      title: input.title.trim(),
+      description: input.description?.trim() || null,
+      work_needed: input.work_needed?.trim() || null,
+      desired_deadline: input.desired_deadline || null,
+      priority: input.priority || "medium",
+      components_status: input.components_status || null,
+      components_location: input.components_location?.trim() || null,
+      documentation_link: input.documentation_link?.trim() || null,
+      requester_comment: input.requester_comment?.trim() || null,
+      status: "new",
+    })
+    .select("id, task_number")
+    .single();
 
-  return { id, task_number: taskNumber };
+  if (error) throw error;
+  return data;
 };
 
 type TaskFilters = {
@@ -69,52 +68,26 @@ type TaskFilters = {
 };
 
 export const listTasks = async (filters: TaskFilters): Promise<Task[]> => {
-  await ensureSchema();
-  const db = getClient();
-  const conditions: string[] = [];
-  const params: (string | null)[] = [];
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
 
-  if (filters.status) {
-    conditions.push("status = ?");
-    params.push(filters.status);
-  }
-  if (filters.priority) {
-    conditions.push("priority = ?");
-    params.push(filters.priority);
-  }
-  if (filters.taskType) {
-    conditions.push("task_type = ?");
-    params.push(filters.taskType);
-  }
-  if (filters.project) {
-    conditions.push("project_name LIKE ?");
-    params.push(`%${filters.project}%`);
-  }
-  if (filters.deadline) {
-    conditions.push("desired_deadline <= ?");
-    params.push(filters.deadline);
-  }
+  let query = supabase.from("tasks").select("*");
+
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.priority) query = query.eq("priority", filters.priority);
+  if (filters.taskType) query = query.eq("task_type", filters.taskType);
+  if (filters.project) query = query.ilike("project_name", `%${filters.project}%`);
+  if (filters.deadline) query = query.lte("desired_deadline", filters.deadline);
   if (filters.search) {
-    conditions.push(
-      "(task_number LIKE ? OR title LIKE ? OR project_name LIKE ?)"
+    query = query.or(
+      `task_number.ilike.%${filters.search}%,title.ilike.%${filters.search}%,project_name.ilike.%${filters.search}%`
     );
-    const term = `%${filters.search}%`;
-    params.push(term, term, term);
   }
 
-  const where =
-    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const { data, error } = await query.order("created_at", { ascending: false });
+  if (error) throw error;
 
-  const result = await db.execute({
-    sql: `SELECT * FROM tasks ${where} ORDER BY created_at DESC`,
-    args: params,
-  });
-
-  const tasks = result.rows.map((row) =>
-    rowToTask(row as unknown as Record<string, unknown>)
-  );
-
-  return tasks.sort((a, b) => {
+  const tasks = (data as Task[]).sort((a, b) => {
     const priorityDiff =
       PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
     if (priorityDiff !== 0) return priorityDiff;
@@ -130,14 +103,16 @@ export const listTasks = async (filters: TaskFilters): Promise<Task[]> => {
 
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
+
+  return tasks;
 };
 
 export const getTaskCounts = async () => {
-  await ensureSchema();
-  const db = getClient();
-  const result = await db.execute(
-    "SELECT status, COUNT(*) as count FROM tasks GROUP BY status"
-  );
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase.from("tasks").select("status");
+  if (error) throw error;
 
   const counts = {
     new: 0,
@@ -146,10 +121,9 @@ export const getTaskCounts = async () => {
     done: 0,
   };
 
-  for (const row of result.rows) {
-    const status = String(row.status);
-    if (status in counts) {
-      counts[status as keyof typeof counts] = toNumber(row.count);
+  for (const row of data ?? []) {
+    if (row.status in counts) {
+      counts[row.status as keyof typeof counts]++;
     }
   }
 
@@ -157,97 +131,94 @@ export const getTaskCounts = async () => {
 };
 
 export const getTaskById = async (id: string): Promise<Task | null> => {
-  await ensureSchema();
-  const db = getClient();
-  const result = await db.execute({
-    sql: "SELECT * FROM tasks WHERE id = ?",
-    args: [id],
-  });
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
 
-  if (result.rows.length === 0) return null;
-  return rowToTask(result.rows[0] as unknown as Record<string, unknown>);
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as Task | null;
 };
 
 export const updateTask = async (
   id: string,
   input: UpdateTaskInput
 ): Promise<Task | null> => {
-  await ensureSchema();
+  await ensureReady();
   const existing = await getTaskById(id);
   if (!existing) return null;
 
-  const fields: string[] = [];
-  const values: (string | null)[] = [];
+  const updateData: Record<string, unknown> = {};
 
-  const setField = (key: string, value: string | null | undefined) => {
-    if (value !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(value);
-    }
-  };
-
-  setField("status", input.status);
-  setField("priority", input.priority);
-  setField("internal_notes", input.internal_notes ?? null);
-  setField("used_components", input.used_components ?? null);
-  setField("missing_components", input.missing_components ?? null);
-  setField("purchase_needed", input.purchase_needed ?? null);
-  setField("result_note", input.result_note ?? null);
+  if (input.status !== undefined) updateData.status = input.status;
+  if (input.priority !== undefined) updateData.priority = input.priority;
+  if (input.internal_notes !== undefined)
+    updateData.internal_notes = input.internal_notes;
+  if (input.used_components !== undefined)
+    updateData.used_components = input.used_components;
+  if (input.missing_components !== undefined)
+    updateData.missing_components = input.missing_components;
+  if (input.purchase_needed !== undefined)
+    updateData.purchase_needed = input.purchase_needed;
+  if (input.result_note !== undefined)
+    updateData.result_note = input.result_note;
 
   if (input.completed_at !== undefined) {
-    setField("completed_at", input.completed_at || null);
+    updateData.completed_at = input.completed_at || null;
   } else if (input.status === "done" && !existing.completed_at) {
-    setField("completed_at", new Date().toISOString());
+    updateData.completed_at = new Date().toISOString();
   }
 
-  if (fields.length === 0) return existing;
+  if (Object.keys(updateData).length === 0) return existing;
 
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("tasks")
+    .update(updateData)
+    .eq("id", id)
+    .select()
+    .single();
 
-  const db = getClient();
-  await db.execute({
-    sql: `UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`,
-    args: values,
-  });
-
-  return getTaskById(id);
+  if (error) throw error;
+  return data as Task;
 };
 
 export const getTaskComments = async (taskId: string): Promise<TaskComment[]> => {
-  await ensureSchema();
-  const db = getClient();
-  const result = await db.execute({
-    sql: "SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC",
-    args: [taskId],
-  });
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
 
-  return result.rows.map((row) =>
-    rowToComment(row as unknown as Record<string, unknown>)
-  );
+  const { data, error } = await supabase
+    .from("task_comments")
+    .select("*")
+    .eq("task_id", taskId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as TaskComment[];
 };
 
 export const addTaskComment = async (
   taskId: string,
   commentText: string
 ): Promise<TaskComment> => {
-  await ensureSchema();
-  const db = getClient();
-  const id = randomUUID();
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
 
-  await db.execute({
-    sql: "INSERT INTO task_comments (id, task_id, comment_text) VALUES (?, ?, ?)",
-    args: [id, taskId, commentText.trim()],
-  });
+  const { data, error } = await supabase
+    .from("task_comments")
+    .insert({
+      task_id: taskId,
+      comment_text: commentText.trim(),
+    })
+    .select()
+    .single();
 
-  const result = await db.execute({
-    sql: "SELECT * FROM task_comments WHERE id = ?",
-    args: [id],
-  });
-
-  return rowToComment(
-    result.rows[0] as unknown as Record<string, unknown>
-  );
+  if (error) throw error;
+  return data as TaskComment;
 };
 
 export type DbUser = {
@@ -258,15 +229,17 @@ export type DbUser = {
 };
 
 export const getUserByEmail = async (email: string): Promise<DbUser | null> => {
-  await ensureSchema();
-  const db = getClient();
-  const result = await db.execute({
-    sql: "SELECT * FROM users WHERE email = ?",
-    args: [email.toLowerCase().trim()],
-  });
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
 
-  if (result.rows.length === 0) return null;
-  return result.rows[0] as unknown as DbUser;
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("email", email.toLowerCase().trim())
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as DbUser | null;
 };
 
 export const createUser = async (
@@ -274,20 +247,19 @@ export const createUser = async (
   passwordHash: string,
   role = "executor"
 ): Promise<DbUser> => {
-  await ensureSchema();
-  const db = getClient();
-  const id = randomUUID();
-  const normalizedEmail = email.toLowerCase().trim();
+  await ensureReady();
+  const supabase = getSupabaseAdmin();
 
-  await db.execute({
-    sql: "INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, ?)",
-    args: [id, normalizedEmail, passwordHash, role],
-  });
+  const { data, error } = await supabase
+    .from("users")
+    .insert({
+      email: email.toLowerCase().trim(),
+      password_hash: passwordHash,
+      role,
+    })
+    .select()
+    .single();
 
-  const result = await db.execute({
-    sql: "SELECT * FROM users WHERE id = ?",
-    args: [id],
-  });
-
-  return result.rows[0] as unknown as DbUser;
+  if (error) throw error;
+  return data as DbUser;
 };

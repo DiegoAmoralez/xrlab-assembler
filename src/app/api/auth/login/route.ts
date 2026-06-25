@@ -47,12 +47,12 @@ export const POST = async (request: NextRequest) => {
       if (error.message.includes("SESSION_SECRET")) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
-      if (
-        error.message.includes("TURSO") ||
-        error.message.includes("SQLITE")
-      ) {
+      if (error.message.includes("Supabase")) {
         return NextResponse.json(
-          { error: "База данных не настроена. Проверьте TURSO_* на Vercel." },
+          {
+            error:
+              "База данных не настроена. Проверьте Supabase переменные на Vercel.",
+          },
           { status: 500 }
         );
       }

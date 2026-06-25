@@ -1,6 +1,5 @@
 import bcrypt from "bcryptjs";
-import { randomUUID } from "crypto";
-import { getClient } from "./client";
+import { getSupabaseAdmin } from "../supabase";
 
 export const DEFAULT_EXECUTOR_EMAILS = [
   "max.malukalo@gmail.com",
@@ -18,22 +17,24 @@ export const ensureDefaultUsers = async (): Promise<void> => {
     return;
   }
 
-  const db = getClient();
+  const supabase = getSupabaseAdmin();
   const passwordHash = await bcrypt.hash(password, 12);
 
   for (const email of DEFAULT_EXECUTOR_EMAILS) {
     const normalizedEmail = email.toLowerCase().trim();
-    const existing = await db.execute({
-      sql: "SELECT id FROM users WHERE email = ?",
-      args: [normalizedEmail],
-    });
 
-    if (existing.rows.length > 0) continue;
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
 
-    const id = randomUUID();
-    await db.execute({
-      sql: "INSERT INTO users (id, email, password_hash, role) VALUES (?, ?, ?, 'executor')",
-      args: [id, normalizedEmail, passwordHash],
+    if (existing) continue;
+
+    await supabase.from("users").insert({
+      email: normalizedEmail,
+      password_hash: passwordHash,
+      role: "executor",
     });
   }
 
