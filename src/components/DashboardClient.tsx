@@ -33,6 +33,8 @@ export const DashboardClient = ({ email }: DashboardClientProps) => {
   const [projectFilter, setProjectFilter] = useState("");
   const [deadlineFilter, setDeadlineFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [fetchError, setFetchError] = useState("");
+  const [fetchHint, setFetchHint] = useState("");
 
   const buildParams = useCallback(
     (status?: string) => {
@@ -64,6 +66,8 @@ export const DashboardClient = ({ email }: DashboardClientProps) => {
 
   const fetchTasks = useCallback(async () => {
     setIsLoading(true);
+    setFetchError("");
+    setFetchHint("");
 
     try {
       const [activeRes, doneRes] = await Promise.all([
@@ -71,18 +75,23 @@ export const DashboardClient = ({ email }: DashboardClientProps) => {
         fetch(`/api/tasks?${buildParams("done").toString()}`),
       ]);
 
-      if (activeRes.ok) {
-        const data = await activeRes.json();
-        setTasks(
-          data.tasks.filter((task: Task) => task.status !== "done")
-        );
-        setCounts(data.counts);
+      if (!activeRes.ok) {
+        const data = await activeRes.json().catch(() => ({}));
+        setFetchError(data.error || "Не удалось загрузить задачи");
+        setFetchHint(data.hint || "");
+        return;
       }
 
+      const data = await activeRes.json();
+      setTasks(data.tasks.filter((task: Task) => task.status !== "done"));
+      setCounts(data.counts);
+
       if (doneRes.ok) {
-        const data = await doneRes.json();
-        setDoneTasks(data.tasks);
+        const doneData = await doneRes.json();
+        setDoneTasks(doneData.tasks);
       }
+    } catch {
+      setFetchError("Ошибка сети при загрузке задач");
     } finally {
       setIsLoading(false);
     }
@@ -223,6 +232,18 @@ export const DashboardClient = ({ email }: DashboardClientProps) => {
               />
             </div>
           </div>
+
+          {fetchError && (
+            <div
+              className="card mb-6 border-red-200 bg-red-50 text-red-800"
+              role="alert"
+            >
+              <p className="font-medium">{fetchError}</p>
+              {fetchHint && (
+                <p className="mt-1 text-sm text-red-700">{fetchHint}</p>
+              )}
+            </div>
+          )}
 
           {isLoading ? (
             <p className="py-12 text-center text-text-muted">Загрузка...</p>

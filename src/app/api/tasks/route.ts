@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createTask, listTasks, getTaskCounts } from "@/lib/db";
 import { requireApiAuth } from "@/lib/server-utils";
 import { CreateTaskInput } from "@/lib/types";
+import { getDbErrorMessage } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -26,7 +27,11 @@ export const POST = async (request: NextRequest) => {
     return NextResponse.json(data, { status: 201 });
   } catch (error) {
     console.error("Create task error:", error);
-    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
+    const message = getDbErrorMessage(error);
+    const hint = message.includes("does not exist")
+      ? "Выполните supabase/schema.sql в Supabase SQL Editor"
+      : undefined;
+    return NextResponse.json({ error: message, hint }, { status: 500 });
   }
 };
 
@@ -53,6 +58,10 @@ export const GET = async (request: NextRequest) => {
     return NextResponse.json({ tasks, counts });
   } catch (error) {
     console.error("List tasks error:", error);
-    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
+    const message = getDbErrorMessage(error);
+    const hint = message.includes("does not exist")
+      ? "Выполните supabase/schema.sql в Supabase SQL Editor"
+      : undefined;
+    return NextResponse.json({ error: message, hint }, { status: 500 });
   }
 };

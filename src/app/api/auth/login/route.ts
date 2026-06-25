@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getUserByEmail } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getDbErrorMessage } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -48,17 +49,16 @@ export const POST = async (request: NextRequest) => {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
       if (error.message.includes("Supabase")) {
-        return NextResponse.json(
-          {
-            error:
-              "База данных не настроена. Проверьте Supabase переменные на Vercel.",
-          },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: error.message }, { status: 500 });
       }
     }
 
-    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
+    const message = getDbErrorMessage(error);
+    const hint = message.includes("does not exist")
+      ? "Выполните supabase/schema.sql в Supabase SQL Editor"
+      : undefined;
+
+    return NextResponse.json({ error: message, hint }, { status: 500 });
   }
 };
 
