@@ -1,28 +1,41 @@
-import { getSupabaseAdmin, getSupabaseConfig, getDbErrorMessage } from "@/lib/supabase";
+import {
+  getSupabaseAdmin,
+  getSupabaseConfig,
+  getDbErrorMessage,
+  getEnvDiagnostics,
+} from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const HealthPage = async () => {
-  const { url, serviceKey } = getSupabaseConfig();
+const EnvRow = ({ name, ok }: { name: string; ok: boolean }) => (
+  <div className="flex items-center justify-between border-b border-border py-2 text-sm last:border-0">
+    <code className="text-text-muted">{name}</code>
+    <span className={ok ? "text-status-done" : "text-text-muted"}>
+      {ok ? "✓ есть" : "— нет"}
+    </span>
+  </div>
+);
 
-  if (!url || !serviceKey) {
+const HealthPage = async () => {
+  const env = getEnvDiagnostics();
+  const config = getSupabaseConfig();
+
+  if (!config.url || !config.serviceKey) {
     return (
       <main className="container-app py-12">
         <div className="card border-red-200 bg-red-50">
           <h1 className="mb-2 text-xl font-bold text-red-800">
-            База не настроена
+            Ключи не найдены
           </h1>
-          <p className="text-red-700">
-            Не заданы{" "}
-            <code className="rounded bg-red-100 px-1">NEXT_PUBLIC_SUPABASE_URL</code>{" "}
-            и{" "}
-            <code className="rounded bg-red-100 px-1">
-              SUPABASE_SERVICE_ROLE_KEY
-            </code>
+          <p className="mb-4 text-red-700">
+            Vercel должен добавить переменные автоматически. Если их нет —
+            сделайте Redeploy после подключения Supabase.
           </p>
-          <p className="mt-3 text-sm text-red-700">
-            Добавьте их в Vercel → Settings → Environment Variables → Redeploy
-          </p>
+          <div className="rounded-xl bg-white p-4">
+            {Object.entries(env).map(([key, ok]) => (
+              <EnvRow key={key} name={key} ok={ok} />
+            ))}
+          </div>
         </div>
       </main>
     );
@@ -46,6 +59,11 @@ const HealthPage = async () => {
                 Выполните <code>supabase/schema.sql</code> в Supabase SQL Editor
               </p>
             )}
+            {error.code === "42501" && (
+              <p className="mt-3 text-sm text-red-700">
+                Нет прав доступа — перезапустите schema.sql (отключает RLS)
+              </p>
+            )}
           </div>
         </main>
       );
@@ -55,7 +73,15 @@ const HealthPage = async () => {
       <main className="container-app py-12">
         <div className="card border-green-200 bg-green-50">
           <h1 className="mb-2 text-xl font-bold text-green-800">Всё ок</h1>
-          <p className="text-green-700">Supabase подключён, таблица tasks доступна.</p>
+          <p className="text-green-700">
+            Supabase подключён, таблица tasks доступна.
+          </p>
+        </div>
+        <div className="card mt-4">
+          <h2 className="mb-3 font-semibold">Переменные окружения</h2>
+          {Object.entries(env).map(([key, ok]) => (
+            <EnvRow key={key} name={key} ok={ok} />
+          ))}
         </div>
       </main>
     );

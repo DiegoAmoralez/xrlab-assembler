@@ -66,3 +66,9 @@ CREATE TRIGGER tasks_updated_at
   BEFORE UPDATE ON tasks
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- API routes работают через server-side ключ (anon или service_role).
+-- Отключаем RLS, чтобы работало с ключами из Vercel Integration.
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE task_comments DISABLE ROW LEVEL SECURITY;

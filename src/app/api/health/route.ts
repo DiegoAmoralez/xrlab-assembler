@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin, getSupabaseConfig, getDbErrorMessage } from "@/lib/supabase";
+import {
+  getSupabaseAdmin,
+  getSupabaseConfig,
+  getDbErrorMessage,
+  getEnvDiagnostics,
+} from "@/lib/supabase";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export const GET = async () => {
-  const { url, serviceKey } = getSupabaseConfig();
+  const config = getSupabaseConfig();
+  const env = getEnvDiagnostics();
 
-  if (!url || !serviceKey) {
+  if (!config.url || !config.serviceKey) {
     return NextResponse.json({
       ok: false,
-      error: "Не заданы NEXT_PUBLIC_SUPABASE_URL и SUPABASE_SERVICE_ROLE_KEY",
+      error: "Не найден Supabase URL или API key",
+      env,
     });
   }
 
@@ -21,19 +29,23 @@ export const GET = async () => {
       return NextResponse.json({
         ok: false,
         error: error.message,
+        code: error.code,
+        env,
         hint:
-          error.message.includes("does not exist") ||
-          error.code === "42P01"
+          error.message.includes("does not exist") || error.code === "42P01"
             ? "Выполните supabase/schema.sql в Supabase SQL Editor"
-            : undefined,
+            : error.code === "42501"
+              ? "Нет прав — выполните schema.sql (DISABLE ROW LEVEL SECURITY)"
+              : undefined,
       });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, env });
   } catch (error) {
     return NextResponse.json({
       ok: false,
       error: getDbErrorMessage(error),
+      env,
     });
   }
 };
