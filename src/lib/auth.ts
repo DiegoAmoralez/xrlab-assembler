@@ -8,10 +8,14 @@ export type SessionData = {
 };
 
 export const getSessionOptions = (): SessionOptions => {
-  const secret = process.env.SESSION_SECRET;
+  const secret = process.env.SESSION_SECRET?.trim();
   if (!secret || secret.length < 32) {
+    const hint =
+      process.env.VERCEL === "1"
+        ? " На Vercel: Settings → Environment Variables → Production → Redeploy."
+        : " Локально: добавьте в .env.local и перезапустите npm run dev.";
     throw new Error(
-      "SESSION_SECRET не задан. Скопируйте .env.example в .env.local и укажите строку ≥ 32 символов."
+      `SESSION_SECRET не задан или короче 32 символов.${hint}`
     );
   }
 
